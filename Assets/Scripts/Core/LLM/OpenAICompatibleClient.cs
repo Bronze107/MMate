@@ -1,20 +1,41 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace MMate.Core.LLM
 {
     public class OpenAICompatibleClient : LLMClient
     {
         [SerializeField] private LLMConfig config;
-        [SerializeField] private float timeout = 30f;
+        [SerializeField] private float timeout = 120f;
 
         private bool isProcessing = false;
-        private TaskCompletionSource<string> currentTaskSource;
+        private static HttpClient _httpClient;
+        private static readonly object _clientLock = new object();
+
+        private static HttpClient GetHttpClient()
+        {
+            if (_httpClient == null)
+            {
+                lock (_clientLock)
+                {
+                    if (_httpClient == null)
+                    {
+                        var handler = new HttpClientHandler
+                        {
+                            ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+                        };
+                        _httpClient = new HttpClient(handler);
+                    }
+                }
+            }
+            return _httpClient;
+        }
 
         public LLMConfig Config
         {
@@ -31,113 +52,224 @@ namespace MMate.Core.LLM
             return true;
         }
 
-        public override Task<string> SendAsync(List<ChatMessage> messages)
+        public override async Task<string> SendAsync(List<ChatMessage> messages)
         {
             if (isProcessing)
             {
                 Debug.LogWarning("Request already in progress");
-                return Task.FromResult<string>(null);
+                return null;
             }
 
             if (config == null || string.IsNullOrEmpty(config.apiKey))
             {
                 Debug.LogError("Invalid config or missing API key");
-                return Task.FromResult<string>(null);
+                return null;
             }
 
-            currentTaskSource = new TaskCompletionSource<string>();
-            StartCoroutine(SendChatRequest(messages, false, null));
-            return currentTaskSource.Task;
-        }
-
-        public override Task SendStreamingAsync(List<ChatMessage> messages, Action<string> onChunk)
-        {
-            if (isProcessing)
-            {
-                Debug.LogWarning("Request already in progress");
-                return Task.CompletedTask;
-            }
-
-            if (config == null || string.IsNullOrEmpty(config.apiKey))
-            {
-                Debug.LogError("Invalid config or missing API key");
-                return Task.CompletedTask;
-            }
-
-            currentTaskSource = new TaskCompletionSource<string>();
-            StartCoroutine(SendChatRequest(messages, true, onChunk));
-            return currentTaskSource.Task;
-        }
-
-        private IEnumerator SendChatRequest(List<ChatMessage> messages, bool streaming, Action<string> onChunk)
-        {
             isProcessing = true;
 
             string url = $"{config.baseUrl.TrimEnd('/')}/chat/completions";
-            string requestBody = BuildRequestBody(messages, streaming);
+            string requestBody = BuildRequestBody(messages, false);
 
-            using (UnityWebRequest request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+            Debug.Log($"[LLM] URL: {url}");
+            Debug.Log($"[LLM] RequestBody: {requestBody}");
+
+            try
             {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(requestBody);
-                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Content-Type", "application/json");
-                request.SetRequestHeader("Authorization", $"Bearer {config.apiKey}");
-                request.timeout = (int)timeout;
+                var client = GetHttpClient();
+                client.Timeout = TimeSpan.FromSeconds(timeout);
 
-                yield return request.SendWebRequest();
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+                    request.Headers.Add("Authorization", $"Bearer {config.apiKey}");
 
-                if (request.result == UnityWebRequest.Result.ConnectionError ||
-                    request.result == UnityWebRequest.Result.ProtocolError)
-                {
-                    string error = $"Request failed: {request.error}";
-                    Debug.LogError(error);
-                    onChunk?.Invoke($"[Error] {request.error}");
-                    currentTaskSource?.TrySetResult(null);
-                }
-                else
-                {
-                    string content = ParseAndStreamResponse(request.downloadHandler.text, onChunk);
-                    currentTaskSource?.TrySetResult(content);
+                    var response = await client.SendAsync(request);
+                    string responseBody = await response.Content.ReadAsStringAsync();
+
+                    Debug.Log($"[LLM] Response code: {(int)response.StatusCode}");
+                    Debug.Log($"[LLM] Response: {responseBody}");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        Debug.LogError($"[LLM] Request failed: HTTP {(int)response.StatusCode} - {responseBody}");
+                        return null;
+                    }
+
+                    return ParseAndStreamResponse(responseBody, null);
                 }
             }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LLM] Request exception: {e.Message}");
+                throw;
+            }
+            finally
+            {
+                isProcessing = false;
+            }
+        }
 
-            isProcessing = false;
+        public override async Task SendStreamingAsync(List<ChatMessage> messages, Action<string> onChunk)
+        {
+            if (isProcessing)
+            {
+                Debug.LogWarning("Request already in progress");
+                return;
+            }
+
+            if (config == null || string.IsNullOrEmpty(config.apiKey))
+            {
+                Debug.LogError("Invalid config or missing API key");
+                return;
+            }
+
+            isProcessing = true;
+
+            string url = $"{config.baseUrl.TrimEnd('/')}/chat/completions";
+            string requestBody = BuildRequestBody(messages, true);
+            var fullContent = new StringBuilder();
+
+            Debug.Log($"[LLM] URL: {url}");
+            Debug.Log($"[LLM] Streaming request...");
+
+            try
+            {
+                var client = GetHttpClient();
+                client.Timeout = TimeSpan.FromSeconds(timeout);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+                    request.Headers.Add("Authorization", $"Bearer {config.apiKey}");
+
+                    var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string errorBody = await response.Content.ReadAsStringAsync();
+                        Debug.LogError($"[LLM] Request failed: HTTP {(int)response.StatusCode} - {errorBody}");
+                        return;
+                    }
+
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    using (var reader = new StreamReader(stream))
+                    {
+                        while (!reader.EndOfStream)
+                        {
+                            string line = await reader.ReadLineAsync();
+
+                            if (string.IsNullOrEmpty(line))
+                                continue;
+
+                            if (!line.StartsWith("data: "))
+                                continue;
+
+                            string data = line.Substring(6).Trim();
+
+                            if (data == "[DONE]")
+                                break;
+
+                            try
+                            {
+                                var chunk = JsonUtility.FromJson<OpenAIStreamChunk>(data);
+                                if (chunk.choices != null && chunk.choices.Length > 0)
+                                {
+                                    string content = chunk.choices[0].delta?.content;
+                                    if (!string.IsNullOrEmpty(content))
+                                    {
+                                        fullContent.Append(content);
+                                        onChunk?.Invoke(content);
+                                        InvokeResponseChunk(content);
+                                    }
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.LogWarning($"[LLM] Failed to parse stream chunk: {e.Message}, data: {data}");
+                            }
+                        }
+                    }
+
+                    string completeResponse = fullContent.ToString();
+                    Debug.Log($"[LLM] Stream complete. Total chars: {completeResponse.Length}");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LLM] Streaming request exception: {e.Message}");
+                throw;
+            }
+            finally
+            {
+                isProcessing = false;
+            }
         }
 
         private string BuildRequestBody(List<ChatMessage> messages, bool streaming)
         {
-            var messageList = new StringBuilder();
-            messageList.Append("[");
-
-            if (!string.IsNullOrEmpty(config.systemPrompt))
-            {
-                messageList.Append($"{{\"role\":\"system\",\"content\":{EscapeJsonString(config.systemPrompt)}}},");
-            }
+            var sb = new StringBuilder();
+            sb.Append("{\"model\":");
+            EscapeJsonString(sb, config.model);
+            sb.Append(",\"messages\":[");
 
             for (int i = 0; i < messages.Count; i++)
             {
-                messageList.Append($"{{\"role\":\"{messages[i].role}\",\"content\":{EscapeJsonString(messages[i].content)}}}");
+                sb.Append("{\"role\":");
+                EscapeJsonString(sb, messages[i].role);
+                sb.Append(",\"content\":");
+                EscapeJsonString(sb, messages[i].content);
+                sb.Append("}");
                 if (i < messages.Count - 1)
                 {
-                    messageList.Append(",");
+                    sb.Append(",");
                 }
             }
 
-            messageList.Append("]");
+            sb.Append("],\"max_tokens\":");
+            sb.Append(config.maxTokens);
+            sb.Append(",\"temperature\":");
+            sb.Append(config.temperature.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"stream\":");
+            sb.Append(streaming ? "true" : "false");
+            sb.Append("}");
 
-            return $"{{\"model\":\"{config.model}\",\"messages\":{messageList},\"max_tokens\":{config.maxTokens},\"temperature\":{config.temperature},\"stream\":{streaming.ToString().ToLower()}}}";
+            return sb.ToString();
         }
 
-        private string EscapeJsonString(string str)
+        private static void EscapeJsonString(StringBuilder sb, string str)
         {
-            if (string.IsNullOrEmpty(str)) return "\"\"";
-            str = str.Replace("\\", "\\\\");
-            str = str.Replace("\"", "\\\"");
-            str = str.Replace("\n", "\\n");
-            str = str.Replace("\r", "\\r");
-            str = str.Replace("\t", "\\t");
-            return $"\"{str}\"";
+            if (str == null)
+            {
+                sb.Append("\"\"");
+                return;
+            }
+
+            sb.Append('"');
+            foreach (char c in str)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20)
+                        {
+                            sb.AppendFormat("\\u{0:X4}", (int)c);
+                        }
+                        else
+                        {
+                            sb.Append(c);
+                        }
+                        break;
+                }
+            }
+            sb.Append('"');
         }
 
         private string ParseAndStreamResponse(string response, Action<string> onChunk)
@@ -177,6 +309,28 @@ namespace MMate.Core.LLM
 
         [Serializable]
         private class Message
+        {
+            public string role;
+            public string content;
+        }
+
+        [Serializable]
+        private class OpenAIStreamChunk
+        {
+            public string id;
+            public StreamChoice[] choices;
+        }
+
+        [Serializable]
+        private class StreamChoice
+        {
+            public StreamDelta delta;
+            public int index;
+            public string finish_reason;
+        }
+
+        [Serializable]
+        private class StreamDelta
         {
             public string role;
             public string content;

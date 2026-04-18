@@ -19,6 +19,9 @@ namespace MMate.UI
         [Header("Scrolling")]
         [SerializeField] private ScrollRect scrollRect;
 
+        private GameObject _streamingMessageObj;
+        private TMP_Text _streamingMessageText;
+
         private void Start()
         {
             if (sendButton != null)
@@ -34,6 +37,8 @@ namespace MMate.UI
             if (ChatManager.Instance != null)
             {
                 ChatManager.Instance.OnConversationUpdate += HandleConversationUpdate;
+                ChatManager.Instance.OnStreamingChunk += HandleStreamingChunk;
+                ChatManager.Instance.OnResponseComplete += HandleResponseComplete;
             }
         }
 
@@ -52,6 +57,8 @@ namespace MMate.UI
             if (ChatManager.Instance != null)
             {
                 ChatManager.Instance.OnConversationUpdate -= HandleConversationUpdate;
+                ChatManager.Instance.OnStreamingChunk -= HandleStreamingChunk;
+                ChatManager.Instance.OnResponseComplete -= HandleResponseComplete;
             }
         }
 
@@ -140,7 +147,42 @@ namespace MMate.UI
         private void HandleConversationUpdate(ChatConversation conversation)
         {
             bool isUser = conversation.role == "user";
+
+            if (!isUser && _streamingMessageObj != null && _streamingMessageText != null)
+            {
+                _streamingMessageText.text = conversation.content;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(messageContainer as RectTransform);
+                ScrollToBottom();
+                return;
+            }
+
             AddMessage(conversation.content, isUser);
+        }
+
+        private void HandleStreamingChunk(string chunk)
+        {
+            if (_streamingMessageObj == null)
+            {
+                if (messageContainer == null || aiMessagePrefab == null)
+                    return;
+
+                _streamingMessageObj = Instantiate(aiMessagePrefab, messageContainer);
+                _streamingMessageObj.SetActive(true);
+                _streamingMessageText = _streamingMessageObj.GetComponentInChildren<TMP_Text>();
+            }
+
+            if (_streamingMessageText != null)
+            {
+                _streamingMessageText.text += chunk;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(messageContainer as RectTransform);
+                ScrollToBottom();
+            }
+        }
+
+        private void HandleResponseComplete()
+        {
+            _streamingMessageObj = null;
+            _streamingMessageText = null;
         }
 
         private void ScrollToBottom()
