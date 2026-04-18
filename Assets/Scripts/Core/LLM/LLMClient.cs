@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace MMate.Core.LLM
@@ -17,7 +18,14 @@ namespace MMate.Core.LLM
         }
     }
 
-    public abstract class LLMClient : MonoBehaviour
+    public interface ILLMClient
+    {
+        Task SendStreamingAsync(List<ChatMessage> messages, Action<string> onChunk);
+        Task<string> SendAsync(List<ChatMessage> messages);
+        bool CheckConnection();
+    }
+
+    public abstract class LLMClient : MonoBehaviour, ILLMClient
     {
         public event Action<string> OnResponseChunk;
 
@@ -26,8 +34,8 @@ namespace MMate.Core.LLM
             OnResponseChunk?.Invoke(chunk);
         }
 
-        public abstract void SendChatAsync(List<ChatMessage> messages);
-
+        public abstract Task SendStreamingAsync(List<ChatMessage> messages, Action<string> onChunk);
+        public abstract Task<string> SendAsync(List<ChatMessage> messages);
         public abstract bool CheckConnection();
     }
 }

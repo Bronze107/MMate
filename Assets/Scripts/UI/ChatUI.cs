@@ -1,12 +1,10 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using MMate.Interaction;
 
 namespace MMate.UI
 {
-    /// <summary>
-    /// Chat UI component for displaying and managing chat messages.
-    /// </summary>
     public class ChatUI : MonoBehaviour
     {
         [Header("Input Components")]
@@ -23,19 +21,16 @@ namespace MMate.UI
 
         private void Start()
         {
-            // Bind button events
             if (sendButton != null)
             {
                 sendButton.onClick.AddListener(OnSendClicked);
             }
 
-            // Bind input field submit event
             if (messageInput != null)
             {
                 messageInput.onSubmit.AddListener(OnInputSubmit);
             }
 
-            // Subscribe to ChatManager events
             if (ChatManager.Instance != null)
             {
                 ChatManager.Instance.OnConversationUpdate += HandleConversationUpdate;
@@ -44,30 +39,22 @@ namespace MMate.UI
 
         private void OnDestroy()
         {
-            // Unbind button events
             if (sendButton != null)
             {
                 sendButton.onClick.RemoveListener(OnSendClicked);
             }
 
-            // Unbind input field events
             if (messageInput != null)
             {
                 messageInput.onSubmit.RemoveListener(OnInputSubmit);
             }
 
-            // Unsubscribe from ChatManager events
             if (ChatManager.Instance != null)
             {
                 ChatManager.Instance.OnConversationUpdate -= HandleConversationUpdate;
             }
         }
 
-        /// <summary>
-        /// Adds a message to the chat list.
-        /// </summary>
-        /// <param name="content">The message content.</param>
-        /// <param name="isUser">True if the message is from the user, false if from AI.</param>
         public void AddMessage(string content, bool isUser)
         {
             if (messageContainer == null)
@@ -87,23 +74,16 @@ namespace MMate.UI
             GameObject messageObj = Instantiate(prefab, messageContainer);
             messageObj.SetActive(true);
 
-            // Try to set the message text
             TMP_Text textComponent = messageObj.GetComponentInChildren<TMP_Text>();
             if (textComponent != null)
             {
                 textComponent.text = content;
             }
 
-            // Force layout rebuild for proper sizing
             LayoutRebuilder.ForceRebuildLayoutImmediate(messageContainer as RectTransform);
-
-            // Scroll to bottom
             ScrollToBottom();
         }
 
-        /// <summary>
-        /// Clears all messages from the chat list.
-        /// </summary>
         public void ClearMessages()
         {
             if (messageContainer == null)
@@ -144,11 +124,9 @@ namespace MMate.UI
                 return;
             }
 
-            // Clear input field
             messageInput.text = string.Empty;
             messageInput.ActivateInputField();
 
-            // Send message through ChatManager
             if (ChatManager.Instance != null)
             {
                 ChatManager.Instance.SendMessage(content);
@@ -159,9 +137,10 @@ namespace MMate.UI
             }
         }
 
-        private void HandleConversationUpdate(string content, bool isUser)
+        private void HandleConversationUpdate(ChatConversation conversation)
         {
-            AddMessage(content, isUser);
+            bool isUser = conversation.role == "user";
+            AddMessage(conversation.content, isUser);
         }
 
         private void ScrollToBottom()

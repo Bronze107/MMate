@@ -15,7 +15,7 @@ namespace MMate.Core.State
             {
                 if (_instance == null)
                 {
-                    _instance = FindFirstObjectByType<AvatarStateMachine>();
+                    _instance = FindObjectOfType<AvatarStateMachine>();
                 }
                 return _instance;
             }

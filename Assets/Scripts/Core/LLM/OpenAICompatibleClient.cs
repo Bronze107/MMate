@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -13,28 +14,12 @@ namespace MMate.Core.LLM
         [SerializeField] private float timeout = 30f;
 
         private bool isProcessing = false;
+        private TaskCompletionSource<string> currentTaskSource;
 
         public LLMConfig Config
         {
             get => config;
             set => config = value;
-        }
-
-        public override void SendChatAsync(List<ChatMessage> messages)
-        {
-            if (isProcessing)
-            {
-                Debug.LogWarning("Request already in progress");
-                return;
-            }
-
-            if (config == null || string.IsNullOrEmpty(config.apiKey))
-            {
-                Debug.LogError("Invalid config or missing API key");
-                return;
-            }
-
-            StartCoroutine(SendChatRequest(messages));
         }
 
         public override bool CheckConnection()
@@ -46,12 +31,50 @@ namespace MMate.Core.LLM
             return true;
         }
 
-        private IEnumerator SendChatRequest(List<ChatMessage> messages)
+        public override Task<string> SendAsync(List<ChatMessage> messages)
+        {
+            if (isProcessing)
+            {
+                Debug.LogWarning("Request already in progress");
+                return Task.FromResult<string>(null);
+            }
+
+            if (config == null || string.IsNullOrEmpty(config.apiKey))
+            {
+                Debug.LogError("Invalid config or missing API key");
+                return Task.FromResult<string>(null);
+            }
+
+            currentTaskSource = new TaskCompletionSource<string>();
+            StartCoroutine(SendChatRequest(messages, false, null));
+            return currentTaskSource.Task;
+        }
+
+        public override Task SendStreamingAsync(List<ChatMessage> messages, Action<string> onChunk)
+        {
+            if (isProcessing)
+            {
+                Debug.LogWarning("Request already in progress");
+                return Task.CompletedTask;
+            }
+
+            if (config == null || string.IsNullOrEmpty(config.apiKey))
+            {
+                Debug.LogError("Invalid config or missing API key");
+                return Task.CompletedTask;
+            }
+
+            currentTaskSource = new TaskCompletionSource<string>();
+            StartCoroutine(SendChatRequest(messages, true, onChunk));
+            return currentTaskSource.Task;
+        }
+
+        private IEnumerator SendChatRequest(List<ChatMessage> messages, bool streaming, Action<string> onChunk)
         {
             isProcessing = true;
 
             string url = $"{config.baseUrl.TrimEnd('/')}/chat/completions";
-            string requestBody = BuildRequestBody(messages);
+            string requestBody = BuildRequestBody(messages, streaming);
 
             using (UnityWebRequest request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
             {
@@ -67,19 +90,22 @@ namespace MMate.Core.LLM
                 if (request.result == UnityWebRequest.Result.ConnectionError ||
                     request.result == UnityWebRequest.Result.ProtocolError)
                 {
-                    Debug.LogError($"Request failed: {request.error}");
-                    InvokeResponseChunk($"[Error] {request.error}");
+                    string error = $"Request failed: {request.error}";
+                    Debug.LogError(error);
+                    onChunk?.Invoke($"[Error] {request.error}");
+                    currentTaskSource?.TrySetResult(null);
                 }
                 else
                 {
-                    ParseAndStreamResponse(request.downloadHandler.text);
+                    string content = ParseAndStreamResponse(request.downloadHandler.text, onChunk);
+                    currentTaskSource?.TrySetResult(content);
                 }
             }
 
             isProcessing = false;
         }
 
-        private string BuildRequestBody(List<ChatMessage> messages)
+        private string BuildRequestBody(List<ChatMessage> messages, bool streaming)
         {
             var messageList = new StringBuilder();
             messageList.Append("[");
@@ -100,7 +126,7 @@ namespace MMate.Core.LLM
 
             messageList.Append("]");
 
-            return $"{{\"model\":\"{config.model}\",\"messages\":{messageList},\"max_tokens\":{config.maxTokens},\"temperature\":{config.temperature},\"stream\":false}}";
+            return $"{{\"model\":\"{config.model}\",\"messages\":{messageList},\"max_tokens\":{config.maxTokens},\"temperature\":{config.temperature},\"stream\":{streaming.ToString().ToLower()}}}";
         }
 
         private string EscapeJsonString(string str)
@@ -114,7 +140,7 @@ namespace MMate.Core.LLM
             return $"\"{str}\"";
         }
 
-        private void ParseAndStreamResponse(string response)
+        private string ParseAndStreamResponse(string response, Action<string> onChunk)
         {
             try
             {
@@ -123,14 +149,17 @@ namespace MMate.Core.LLM
                 if (responseData.choices != null && responseData.choices.Length > 0)
                 {
                     string content = responseData.choices[0].message.content;
+                    onChunk?.Invoke(content);
                     InvokeResponseChunk(content);
+                    return content;
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError($"Failed to parse response: {e.Message}");
-                InvokeResponseChunk($"[Error] Failed to parse response");
+                onChunk?.Invoke("[Error] Failed to parse response");
             }
+            return null;
         }
 
         [Serializable]
