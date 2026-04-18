@@ -137,3 +137,4 @@ Temporary Items
 # Project specific
 /Assets/StreamingAssets/cache/
 .vsconfig
+.claude/worktrees/
