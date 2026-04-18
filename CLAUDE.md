@@ -80,7 +80,6 @@ public class ExampleComponent : MonoBehaviour
 
 - **永远不要手动创建 .meta 文件**
 - 让 Unity 自动生成，确保 GUID 唯一
-- 提交代码时包含 .meta 文件
 
 ### Assembly Definition (asmdef)
 
@@ -192,7 +191,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 - `*.csproj`, `*.sln` - IDE 项目文件
 - `.vs/`, `.idea/` - IDE 配置
 - `/Build/`, `/Builds/` - 构建输出
-- `.claude/worktrees/` - Claude 工作树
+- `.claude/` - Claude 工作区
 
 ## 开发流程
 
