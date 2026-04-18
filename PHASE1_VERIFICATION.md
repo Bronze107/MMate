@@ -325,9 +325,7 @@ AvatarStateMachine.Instance.OnStateChanged += (prev, next) =>
 
 | 问题 | 说明 | 解决方案 |
 |------|------|----------|
-| UnityWebRequest POST timeout | Windows 上 POST 请求卡住 | 已切换为 HttpClient |
 | 流式响应 chunk 大小 | 取决于服务端，可能一次多个字符 | 正常行为，服务端控制 |
-| 证书验证 | 开发环境跳过验证 | `BypassCertificateHandler`（生产环境需恢复） |
 | 3D 模型资源 | 需要自备模型和动画 | Phase 2 补充角色定制 |
 
 ---
