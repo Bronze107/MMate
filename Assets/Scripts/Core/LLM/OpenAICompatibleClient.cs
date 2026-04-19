@@ -155,27 +155,22 @@ namespace MMate.Core.LLM
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     using (var reader = new StreamReader(stream))
                     {
-                        while (!reader.EndOfStream)
+                        string line;
+                        while ((line = await reader.ReadLineAsync()) != null)
                         {
-                            string line = await reader.ReadLineAsync();
-
-                            if (string.IsNullOrEmpty(line))
+                            if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
                                 continue;
 
-                            if (!line.StartsWith("data: "))
-                                continue;
-
-                            string data = line.Substring(6).Trim();
-
+                            var data = line.Substring(6).Trim();
                             if (data == "[DONE]")
                                 break;
 
                             try
                             {
-                                var chunk = JsonUtility.FromJson<OpenAIStreamChunk>(data);
-                                if (chunk.choices != null && chunk.choices.Length > 0)
+                                var streamChunk = JsonUtility.FromJson<OpenAIStreamChunk>(data);
+                                if (streamChunk.choices?.Length > 0)
                                 {
-                                    string content = chunk.choices[0].delta?.content;
+                                    var content = streamChunk.choices[0].delta?.content;
                                     if (!string.IsNullOrEmpty(content))
                                     {
                                         fullContent.Append(content);
