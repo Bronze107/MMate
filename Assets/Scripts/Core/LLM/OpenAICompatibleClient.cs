@@ -5,6 +5,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace MMate.Core.LLM
@@ -167,7 +168,7 @@ namespace MMate.Core.LLM
 
                             try
                             {
-                                var streamChunk = JsonUtility.FromJson<OpenAIStreamChunk>(data);
+                                var streamChunk = JsonConvert.DeserializeObject<OpenAIStreamChunk>(data);
                                 if (streamChunk.choices?.Length > 0)
                                 {
                                     var content = streamChunk.choices[0].delta?.content;
@@ -271,7 +272,7 @@ namespace MMate.Core.LLM
         {
             try
             {
-                var responseData = JsonUtility.FromJson<OpenAIResponse>(response);
+                var responseData = JsonConvert.DeserializeObject<OpenAIResponse>(response);
 
                 if (responseData.choices != null && responseData.choices.Length > 0)
                 {

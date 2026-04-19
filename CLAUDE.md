@@ -98,8 +98,7 @@ Unity 2022.3 LTS 限制：
 
 ### 序列化
 
-- 使用 `UnityEngine.JsonUtility` 处理简单序列化
-- 复杂 JSON 可考虑 `Newtonsoft.Json`（需安装包）
+- 使用 `Newtonsoft.Json` 处理Json序列化
 - 配置文件放在 `Assets/StreamingAssets/` 或 `Resources/`
 
 ## 架构原则

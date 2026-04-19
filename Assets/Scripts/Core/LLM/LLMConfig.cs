@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace MMate.Core.LLM
@@ -26,7 +27,7 @@ namespace MMate.Core.LLM
                 }
 
                 string json = File.ReadAllText(path);
-                var config = JsonUtility.FromJson<LLMConfig>(json);
+                var config = JsonConvert.DeserializeObject<LLMConfig>(json);
                 return config ?? new LLMConfig();
             }
             catch (Exception e)
@@ -46,7 +47,7 @@ namespace MMate.Core.LLM
                     Directory.CreateDirectory(directory);
                 }
 
-                string json = JsonUtility.ToJson(this, true);
+                string json = JsonConvert.SerializeObject(this);
                 File.WriteAllText(path, json);
                 Debug.Log($"Config saved to: {path}");
             }
