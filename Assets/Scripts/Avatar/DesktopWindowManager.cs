@@ -92,8 +92,10 @@ namespace MMate.Avatar
 
         private void Start()
         {
+            Application.targetFrameRate = 30;
+            Screen.SetResolution(360, 360, false);
             ResolveCamera();
-            Invoke(nameof(InitializeWindow), 0.5f);
+            Invoke(nameof(InitializeWindow), 0.1f);
         }
 
         private void Update()
