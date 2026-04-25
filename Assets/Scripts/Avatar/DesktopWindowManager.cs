@@ -39,8 +39,17 @@ namespace MMate.Avatar
         private const int GWL_STYLE = -16;
         private const int GWL_EXSTYLE = -20;
 
+        private const uint WM_NCLBUTTONDOWN = 0xA1;
+        private const uint HTCAPTION = 0x2;
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr GetActiveWindow();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetWindowLong(IntPtr hWnd, int nIndex);
@@ -70,6 +79,13 @@ namespace MMate.Avatar
         [Tooltip("Camera background and window color key. Pixels with this exact RGB become transparent. Choose a color NOT used by the avatar.")]
         [SerializeField] private Color transparentColor = Color.black;
 
+        [Header("Drag")]
+        [Tooltip("Mouse button used to drag the window.")]
+        [SerializeField] private int dragMouseButton = 0; // 0 = left, 1 = right, 2 = middle
+        [SerializeField] private bool dragEnabled = true;
+        [Tooltip("Only allow dragging when clicking on a 3D object with a Collider.")]
+        [SerializeField] private bool dragOn3DObjectOnly = true;
+
         [Header("Click Through")]
         [SerializeField] private bool clickThrough = false;
         [Tooltip("Hotkey to toggle click-through mode at runtime.")]
@@ -85,6 +101,7 @@ namespace MMate.Avatar
         private IntPtr _hwnd;
         private bool _initialized;
         private Camera _camera;
+        private bool _isDragging;
 
         #endregion
 
@@ -105,6 +122,50 @@ namespace MMate.Avatar
 
             if (Input.GetKeyDown(clickThroughToggleKey))
                 ToggleClickThrough();
+
+            HandleDrag();
+        }
+
+        private void HandleDrag()
+        {
+            if (!dragEnabled)
+                return;
+
+            // Only drag when not in click-through mode
+            if (clickThrough)
+                return;
+
+            if (Input.GetMouseButtonDown(dragMouseButton))
+            {
+                if (dragOn3DObjectOnly)
+                {
+                    if (TryGet3DObjectUnderMouse(out _))
+                        DragWindow();
+                }
+                else
+                {
+                    DragWindow();
+                }
+            }
+        }
+
+        private bool TryGet3DObjectUnderMouse(out RaycastHit hit)
+        {
+            hit = default;
+            if (_camera == null)
+                return false;
+
+            Ray ray = _camera.ScreenPointToRay(Input.mousePosition);
+            return Physics.Raycast(ray, out hit, Mathf.Infinity);
+        }
+
+        private void DragWindow()
+        {
+            if (_hwnd == IntPtr.Zero)
+                return;
+
+            ReleaseCapture();
+            SendMessage(_hwnd, WM_NCLBUTTONDOWN, new IntPtr(HTCAPTION), IntPtr.Zero);
         }
 
         private void LateUpdate()
