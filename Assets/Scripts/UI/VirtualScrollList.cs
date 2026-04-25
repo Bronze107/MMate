@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 namespace MMate.UI
 {
     /// <summary>
     /// 虚拟滚动列表组件。通过对象池复用固定数量的 UI 项，支持大量数据的高效显示。
-    /// 适用于固定高度的列表项。如需动态高度，需预估高度或扩展此组件。
+    /// 支持固定高度与动态高度两种模式。动态高度通过前缀和数组 + 二分查找定位可见项。
     /// </summary>
     public class VirtualScrollList : MonoBehaviour
     {
@@ -24,6 +25,12 @@ namespace MMate.UI
         [SerializeField] private float spacing = 10f;
         [SerializeField] private int poolSize = 20;
         [SerializeField] private Padding padding;
+
+        [Header("TMP Pre-calculation (Optional)")]
+        [Tooltip("用于预计算文本高度的 TMP_Text 模板。建议放置一个非激活的 TMP_Text 对象，其字体、字号等配置与列表项一致。")]
+        [SerializeField] private TMP_Text textTemplate;
+        [Tooltip("文本预计算时扣除的横向边距总和。")]
+        [SerializeField] private float textWidthMargin = 20f;
 
         [Header("Options")]
         [SerializeField] private bool updateOnViewportResize = true;
@@ -42,6 +49,10 @@ namespace MMate.UI
         private int _lastVisibleIndex = -1;
         private float _itemStride;
         private float _viewportHeight;
+
+        // 动态高度
+        private float[] _itemHeights;
+        private float[] _prefixSum;
 
         /// <summary>
         /// 参数：数据索引，项实例。仅在项首次进入可视区域或重新绑定时触发。
@@ -138,24 +149,145 @@ namespace MMate.UI
         }
 
         /// <summary>
-        /// 设置数据总量并刷新列表。
+        /// 固定高度模式：设置数据总量并刷新列表。
         /// </summary>
         public void SetDataCount(int count)
         {
-            if (_dataCount == count) return;
+            if (_dataCount == count && _itemHeights == null) return;
 
             _dataCount = count;
+            _itemHeights = null;
+            _prefixSum = null;
             UpdateContentSize();
             UpdateVisibility();
+        }
+
+        /// <summary>
+        /// 动态高度模式：传入每项的实际高度数组。
+        /// </summary>
+        public void SetDataCount(int count, float[] heights)
+        {
+            if (heights == null || heights.Length != count)
+            {
+                Debug.LogWarning("[VirtualScrollList] heights array is null or length mismatch. Falling back to fixed height.");
+                SetDataCount(count);
+                return;
+            }
+
+            if (_dataCount == count && _itemHeights != null && ArraysEqual(_itemHeights, heights))
+                return;
+
+            _dataCount = count;
+            _itemHeights = new float[count];
+            Array.Copy(heights, _itemHeights, count);
+            RebuildPrefixSum();
+            UpdateContentSize();
+            UpdateVisibility();
+        }
+
+        /// <summary>
+        /// 文本列表专用：使用 TMP_Text 预计算每项高度，并启用动态高度模式。
+        /// </summary>
+        public void SetTextData(List<string> texts)
+        {
+            if (texts == null)
+            {
+                SetDataCount(0);
+                return;
+            }
+
+            if (textTemplate == null)
+            {
+                Debug.LogWarning("[VirtualScrollList] textTemplate is not assigned. Falling back to fixed height.");
+                SetDataCount(texts.Count);
+                return;
+            }
+
+            float maxWidth = GetTextMaxWidth();
+            float[] heights = new float[texts.Count];
+
+            for (int i = 0; i < texts.Count; i++)
+            {
+                heights[i] = PredictTextHeight(texts[i], maxWidth);
+                heights[i] = Mathf.Max(heights[i], itemHeight);
+            }
+
+            SetDataCount(texts.Count, heights);
+        }
+
+        private float GetTextMaxWidth()
+        {
+            if (viewportTransform != null)
+                return Mathf.Max(10f, viewportTransform.rect.width - textWidthMargin);
+
+            return 400f;
+        }
+
+        private float PredictTextHeight(string text, float maxWidth)
+        {
+            try
+            {
+                // TMP_Text.GetPreferredValues(string, float, float) 在 TMP 3.0+ 可用
+                Vector2 preferred = textTemplate.GetPreferredValues(text, maxWidth, float.PositiveInfinity);
+                return preferred.y;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[VirtualScrollList] TMP pre-calculation failed: {ex.Message}. Using fallback.");
+                return itemHeight;
+            }
+        }
+
+        private void RebuildPrefixSum()
+        {
+            if (_dataCount <= 0)
+            {
+                _prefixSum = null;
+                return;
+            }
+
+            _prefixSum = new float[_dataCount + 1];
+            _prefixSum[0] = padding.top;
+
+            for (int i = 0; i < _dataCount; i++)
+            {
+                _prefixSum[i + 1] = _prefixSum[i] + _itemHeights[i] + spacing;
+            }
+        }
+
+        private static bool ArraysEqual(float[] a, float[] b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+            if (a.Length != b.Length) return false;
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (!Mathf.Approximately(a[i], b[i]))
+                    return false;
+            }
+            return true;
         }
 
         private void UpdateContentSize()
         {
             if (contentTransform == null) return;
 
-            float totalHeight = padding.top + padding.bottom;
-            if (_dataCount > 0)
+            float totalHeight;
+
+            if (_prefixSum != null && _dataCount > 0)
+            {
+                totalHeight = _prefixSum[_dataCount - 1] + _itemHeights[_dataCount - 1] + padding.bottom;
+            }
+            else if (_dataCount > 0)
+            {
+                totalHeight = padding.top + padding.bottom;
                 totalHeight += _dataCount * itemHeight + (_dataCount - 1) * spacing;
+            }
+            else
+            {
+                totalHeight = padding.top + padding.bottom;
+            }
 
             contentTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, totalHeight);
         }
@@ -178,13 +310,35 @@ namespace MMate.UI
             float maxScroll = Mathf.Max(0, contentHeight - _viewportHeight);
             float scrollOffset = (1f - scrollRect.verticalNormalizedPosition) * maxScroll;
 
-            int startIndex = Mathf.FloorToInt((scrollOffset - padding.top) / _itemStride);
-            int endIndex = Mathf.CeilToInt((scrollOffset + _viewportHeight - padding.top) / _itemStride);
+            int startIndex;
+            int endIndex;
 
-            startIndex = Mathf.Max(0, startIndex);
-            endIndex = Mathf.Min(_dataCount - 1, endIndex);
+            if (_prefixSum != null)
+            {
+                // 动态高度：前缀和 + 二分查找
+                startIndex = UpperBound(_prefixSum, scrollOffset, _dataCount) - 1;
+                startIndex = Mathf.Max(0, startIndex);
 
-            if (startIndex > endIndex)
+                while (startIndex < _dataCount && _prefixSum[startIndex] + _itemHeights[startIndex] <= scrollOffset)
+                    startIndex++;
+
+                endIndex = UpperBound(_prefixSum, scrollOffset + _viewportHeight, _dataCount) - 1;
+                endIndex = Mathf.Min(_dataCount - 1, endIndex);
+
+                while (endIndex > startIndex && _prefixSum[endIndex] >= scrollOffset + _viewportHeight)
+                    endIndex--;
+            }
+            else
+            {
+                // 固定高度
+                startIndex = Mathf.FloorToInt((scrollOffset - padding.top) / _itemStride);
+                endIndex = Mathf.CeilToInt((scrollOffset + _viewportHeight - padding.top) / _itemStride);
+
+                startIndex = Mathf.Max(0, startIndex);
+                endIndex = Mathf.Min(_dataCount - 1, endIndex);
+            }
+
+            if (startIndex > endIndex || startIndex >= _dataCount)
             {
                 HideAllItems();
                 return;
@@ -228,8 +382,27 @@ namespace MMate.UI
                     isNewBind = true;
                 }
 
-                float yPos = -(padding.top + dataIndex * _itemStride);
+                // 设置位置与高度
+                float yPos;
+                float targetHeight;
+
+                if (_prefixSum != null)
+                {
+                    yPos = -_prefixSum[dataIndex];
+                    targetHeight = _itemHeights[dataIndex];
+                }
+                else
+                {
+                    yPos = -(padding.top + dataIndex * _itemStride);
+                    targetHeight = itemHeight;
+                }
+
                 item.anchoredPosition = new Vector2(0, yPos);
+
+                if (!Mathf.Approximately(item.sizeDelta.y, targetHeight))
+                {
+                    item.sizeDelta = new Vector2(item.sizeDelta.x, targetHeight);
+                }
 
                 if (isNewBind)
                 {
@@ -246,6 +419,26 @@ namespace MMate.UI
 
             _firstVisibleIndex = startIndex;
             _lastVisibleIndex = endIndex;
+        }
+
+        /// <summary>
+        /// 二分查找：返回第一个满足 arr[i] > target 的索引 i。搜索范围为 [0, length)。
+        /// </summary>
+        private static int UpperBound(float[] arr, float target, int length)
+        {
+            int lo = 0;
+            int hi = length;
+
+            while (lo < hi)
+            {
+                int mid = (lo + hi) >> 1;
+                if (arr[mid] <= target)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+
+            return lo;
         }
 
         private int GetPoolIndexForData(int dataIndex)
@@ -323,9 +516,22 @@ namespace MMate.UI
 
             if (scrollableHeight <= 0) return;
 
-            float targetOffset = padding.top + index * _itemStride;
+            float targetOffset;
+            float targetHeight;
+
+            if (_prefixSum != null)
+            {
+                targetOffset = _prefixSum[index];
+                targetHeight = _itemHeights[index];
+            }
+            else
+            {
+                targetOffset = padding.top + index * _itemStride;
+                targetHeight = itemHeight;
+            }
+
             if (!alignTop)
-                targetOffset -= (_viewportHeight - itemHeight) * 0.5f;
+                targetOffset -= (_viewportHeight - targetHeight) * 0.5f;
 
             targetOffset = Mathf.Clamp(targetOffset, 0, scrollableHeight);
             float normalizedPos = 1f - targetOffset / scrollableHeight;

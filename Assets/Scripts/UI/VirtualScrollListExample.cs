@@ -5,7 +5,7 @@ using TMPro;
 namespace MMate.UI
 {
     /// <summary>
-    /// VirtualScrollList 使用示例：聊天消息列表。
+    /// VirtualScrollList 使用示例：聊天消息列表（动态高度 + TMP 预计算）。
     /// </summary>
     public class VirtualScrollListExample : MonoBehaviour
     {
@@ -24,7 +24,9 @@ namespace MMate.UI
             }
 
             scrollList.OnItemBind += OnItemBind;
-            scrollList.SetDataCount(messages.Count);
+
+            // 动态高度模式：自动 TMP 预计算
+            scrollList.SetTextData(messages);
         }
 
         private void OnDestroy()
@@ -38,7 +40,7 @@ namespace MMate.UI
             TMP_Text text = itemObj.GetComponentInChildren<TMP_Text>();
             if (text != null)
             {
-                text.text = $"[{index}] {messages[index]}";
+                text.text = messages[index];
             }
         }
 
@@ -48,7 +50,7 @@ namespace MMate.UI
         public void AddMessage(string message)
         {
             messages.Add(message);
-            scrollList.SetDataCount(messages.Count);
+            scrollList.SetTextData(messages);
             scrollList.ScrollToIndex(messages.Count - 1);
         }
 
@@ -58,7 +60,7 @@ namespace MMate.UI
         public void ClearMessages()
         {
             messages.Clear();
-            scrollList.SetDataCount(0);
+            scrollList.SetTextData(messages);
         }
     }
 }
