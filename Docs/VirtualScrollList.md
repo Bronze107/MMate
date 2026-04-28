@@ -37,7 +37,9 @@
 Assets/Scripts/UI/
 ├── VirtualScrollList.cs         # 核心组件
 ├── VirtualScrollItem.cs         # 项辅助组件（可选）
-└── VirtualScrollListExample.cs  # 使用示例
+├── VirtualScrollListExample.cs  # 使用示例
+├── ChatMessageItem.cs           # 聊天气泡项（自动背景/文本/对齐）
+└── ChatMessageList.cs           # 聊天列表管理器（自动预计算高度）
 ```
 
 ---
@@ -319,3 +321,69 @@ public class ChatMessageList : MonoBehaviour
 | 滚动时项闪烁或位置跳跃 | `Pool Size` 太小 | 增大 `Pool Size` |
 | 项高度始终等于 `Item Height` | 使用了 `SetDataCount` 而非 `SetTextData` | 聊天场景改用 `SetTextData` |
 | 添加消息后滚动位置不对 | `ScrollToIndex` 在 `SetTextData` 之前调用 | 确保先 `SetTextData` 更新内容高度，再 `ScrollToIndex` |
+
+---
+
+## 自动化聊天气泡（推荐）
+
+针对聊天场景，提供了两个高层封装组件，可自动处理背景创建、尺寸计算、左右对齐和高度预计算。
+
+### 文件
+
+```
+Assets/Scripts/UI/
+├── ChatMessageItem.cs   # 聊天气泡项（挂在 itemPrefab 上）
+└── ChatMessageList.cs   # 聊天列表管理器（挂在场景中）
+```
+
+### 快速开始
+
+**1. 创建 itemPrefab**
+
+创建一个空 GameObject，挂上 `ChatMessageItem`：
+- 点击组件右上角 **⋮ → Initialize**，会自动创建 `Background` + `Text` 子对象
+- 配置 `Max Bubble Width`、`Bubble Padding` 和对齐边距
+- 拖入用户/AI 的气泡图片、颜色
+- 把这个 GameObject 拖成 Prefab
+
+**2. 配置 ChatMessageList**
+
+在场景中创建一个空 GameObject，挂上 `ChatMessageList`：
+- `Scroll List` → 拖入挂载了 `VirtualScrollList` 的 GameObject
+- `Item Prefab` → 拖入上面的 Prefab
+- `Input Field` / `Send Button`（可选）→ 拖入对应 UI 组件
+
+**3. 代码中使用**
+
+```csharp
+// 发送用户消息
+chatMessageList.AddMessage("你好", isUser: true);
+
+// 接收 AI 回复
+chatMessageList.AddAIResponse("你好！有什么可以帮你的？");
+
+// 清空
+chatMessageList.ClearMessages();
+```
+
+`ChatMessageList` 会自动：
+1. 预计算每条消息的高度
+2. 调用 `VirtualScrollList.SetDataCount(count, heights)` 启用动态高度
+3. 在 `OnItemBind` 中调用 `ChatMessageItem.Setup(text, isUser)` 自动设置文本、背景尺寸和对齐
+
+### ChatMessageItem 配置
+
+| 字段 | 说明 |
+|------|------|
+| `Max Bubble Width` | 气泡最大宽度，超过自动换行 |
+| `Bubble Padding` | 背景比文本大多少，X=左右总和，Y=上下总和 |
+| `Side Margin` | 气泡距离屏幕左右边缘的边距 |
+| `User Bubble Sprite/Color` | 用户消息的样式 |
+| `AI Bubble Sprite/Color` | AI 消息的样式 |
+
+### 手动初始化（编辑器中）
+
+如果 Prefab 上的子对象结构不对，选中 Prefab 后点击 Inspector 中 `ChatMessageItem` 组件右上角的 **⋮ → Initialize**，会自动：
+- 查找现有的 `Background` / `Text` 子对象，找不到则自动创建
+- 配置所有 RectTransform 的 Anchor、Pivot
+- 配置 TMP_Text 的 Word Wrapping、Overflow

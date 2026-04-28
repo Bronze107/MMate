@@ -62,5 +62,13 @@ namespace MMate.UI
             messages.Clear();
             scrollList.SetTextData(messages);
         }
+
+        void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F6))
+                AddMessage(Time.deltaTime.ToString());
+            if (Input.GetKeyDown(KeyCode.F7))
+                ClearMessages();
+        }
     }
 }

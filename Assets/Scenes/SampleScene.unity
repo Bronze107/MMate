@@ -294,6 +294,7 @@ GameObject:
   m_Component:
   - component: {fileID: 105939924}
   - component: {fileID: 105939923}
+  - component: {fileID: 105939925}
   m_Layer: 0
   m_Name: Phase1QuickTest
   m_TagString: Untagged
@@ -308,7 +309,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 105939922}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 38a72da4730821647adfda1b0071477f, type: 3}
   m_Name: 
@@ -328,6 +329,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &105939925
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 105939922}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7c6b9e84f40bfe428c6949a98ff4e72, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scrollList: {fileID: 335967667}
+  messages: []
 --- !u!1 &321089840
 GameObject:
   m_ObjectHideFlags: 0
@@ -567,6 +582,7 @@ GameObject:
   - component: {fileID: 335967666}
   - component: {fileID: 335967665}
   - component: {fileID: 335967664}
+  - component: {fileID: 335967667}
   m_Layer: 5
   m_Name: Scroll View
   m_TagString: Untagged
@@ -664,6 +680,32 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 335967662}
   m_CullTransparentMesh: 1
+--- !u!114 &335967667
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 335967662}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1b7479583c1f01408f840415353b3e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scrollRect: {fileID: 335967664}
+  viewportTransform: {fileID: 321089841}
+  contentTransform: {fileID: 1141792490}
+  itemPrefab: {fileID: 3717879042023573368, guid: dcc97bfff687c294a877a7f9f4e1ae39,
+    type: 3}
+  itemHeight: 60
+  spacing: 10
+  poolSize: 6
+  padding:
+    top: 0
+    bottom: 0
+  textTemplate: {fileID: 0}
+  textWidthMargin: 20
+  updateOnViewportResize: 1
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
